@@ -1,0 +1,100 @@
+# Energy in kcal/mol, time in fs, distance in angstroms. 
+variable t index  0.085 
+shell mkdir cl20_$t_z
+shell cd cl20_$t_z
+shell cp ../27840.data ./
+shell cp ../control.reax ./
+shell cp ../ffield.reax.lg ./
+log log.$t
+units           real
+boundary p p p
+atom_style      charge
+read_data       27840.data
+#read_restart     200000.restart1
+pair_style      reaxff control.reax  checkqeq yes lgvdw yes safezone 10.0 mincap 5000
+pair_coeff      * * ffield.reax.lg C H O N
+
+neighbor	1 bin
+neigh_modify	every 1 delay 0 check yes
+
+
+variable pe equal pe
+variable ke equal ke
+variable p equal (pxx+pyy+pzz)/3
+variable temp equal temp
+variable step equal step 
+variable density equal density 
+variable press equal press
+variable vol equal vol
+
+compute ke all ke/atom
+compute stress all stress/atom NULL
+variable stress1 atom -c_stress[1]
+variable stress2 atom -c_stress[2]
+variable stress3 atom -c_stress[3]
+variable stress4 atom -c_stress[4]
+variable stress5 atom -c_stress[5]
+variable stress6 atom -c_stress[6]
+variable etotal equal etotal
+
+#log relax.txt
+thermo 100
+thermo_style custom step temp pe pxx pyy pzz ke
+timestep 0.1
+
+fix  reac  all qeq/reaxff 1 0.0 10.0 1e-6 reaxff
+min_style   cg
+minimize   1.0e-6  1.0e-8   50000  100000
+
+write_data RDX-minimize.data
+
+fix  bond  all  reaxff/bonds 20000 relaxtion.reax
+fix spe1 all reaxff/species 1 1 100 species.out cutoff 1 1 0.55 cutoff 1 4 0.30 cutoff 1 3 0.65 cutoff 1 2 0.40 &
+  cutoff 3 3 0.65 cutoff 4 3 0.40 cutoff 3 2 0.40 cutoff 2 2 0.55 cutoff 2 4 0.55 cutoff 4 4 0.55 
+restart 100000  *.restart1
+dump 1 all custom 1000 relaxtion1.lmptrj  id type q xu yu zu vx vy vz c_ke v_stress1 v_stress2 v_stress3 v_stress4 v_stress5 v_stress6 
+
+velocity all create 300 99999
+fix npt all npt temp 300.0 300.0 10 iso 1.0 1.0 100
+thermo_style   custom step temp press vol density pe ke
+fix txt1 all print 100 "${step} ${temp} ${p} ${vol} ${density} ${pe} ${ke}" file 1.txt screen no title "step temp press vol density pe ke"
+run 200000
+unfix npt
+fix npt2 all npt temp 300.0 300.0 10 iso 10000 10000 100
+run 300000
+unfix npt2
+fix npt3 all npt temp 300.0 300.0 10 iso 1.0 1.0 100
+run 300000
+undump 1
+unfix npt3
+unfix bond
+unfix spe1
+reset_timestep 0
+fix nve all nve
+fix qtb all qtb temp 300 damp 500 seed 35082 f_max 100 N_f 100
+dump 2 all custom 1000 relaxtion2.lmptrj.$t  id type q xu yu zu vx vy vz c_ke v_stress1 v_stress2 v_stress3 v_stress4 v_stress5 v_stress6 
+restart 50000  *.restart2
+fix txt2 all print 100 "${step} ${temp} ${press} ${vol} ${density} ${pe} ${ke}" file 2_$t.txt screen no &
+	 title "step temp press vol density pe ke"
+run 50000
+undump 2
+unfix nve
+unfix qtb
+reset_timestep 0
+fix qbmsst all qbmsst z $t q 10 damp 500 f_max 100 N_f 100 eta 1.0 beta 400 T_init 300
+variable        dhug    equal f_qbmsst[1]
+variable        dray    equal f_qbmsst[2]
+variable        lgr_vel equal f_qbmsst[3]
+variable        lgr_pos equal f_qbmsst[4]
+variable        T_qm    equal f_qbmsst[5]
+variable f_qbmsst equal f_qbmsst
+timestep 0.1
+thermo_style  custom step temp press lx ly lz vol density pxx pyy pzz ke pe etotal v_dhug v_dray v_lgr_vel v_lgr_pos v_T_qm f_qbmsst
+fix txt3 all print 100 "${step} ${temp} ${press} ${vol} ${density} ${pe} ${ke} ${etotal} ${dhug} ${dray} ${lgr_vel} ${lgr_pos} ${T_qm} ${f_qbmsst}" &
+	 file cl20_z_$t.txt screen no title "step temp press vol density pe ke etotal v_dhug v_dray v_lgr_vel v_lgr_pos v_T_qm f_qbmsst"
+dump 3 all custom 1000 decomposition.lmptrj.$t  id type q xu yu zu vx vy vz c_ke v_stress1 v_stress2 v_stress3 v_stress4 v_stress5 v_stress6 
+fix  bond  all  reaxff/bonds 1000 bonds.reax
+fix spe2 all reaxff/species 1 1 100 species2.out cutoff 1 1 0.55 cutoff 1 4 0.30 cutoff 1 3 0.65 cutoff 1 2 0.40 &
+  cutoff 3 3 0.65 cutoff 4 3 0.40 cutoff 3 2 0.40 cutoff 2 2 0.55 cutoff 2 4 0.55 cutoff 4 4 0.55 
+restart 100000  *.restart3
+run 500000
